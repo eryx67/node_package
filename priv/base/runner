@@ -17,12 +17,16 @@ cd $RUNNER_BASE_DIR
 # Identify the script name
 SCRIPT=`basename $0`
 
+REL_DIR="$RUNNER_BASE_DIR/releases/$APP_VSN"
+REL_NAME="$RUNNER_SCRIPT"
+
 usage() {
 cat <<EOF
 Usage: $SCRIPT «command»
 where «command» is one of the following:
-    { help | start | stop | restart | ping | console | attach
-      attach-direct | ertspath | chkconfig | escript | version | getpid
+    { help | start | stop | restart | status | ping |
+      console | console_clean | console_boot | foreground |
+      attach | attach-direct | ertspath | chkconfig | escript | version | getpid
       top [-interval N] [-sort { reductions | memory | msg_q }] [-lines N] } |
       config { generate | effective | describe VARIABLE } [-l debug]
 
@@ -50,6 +54,10 @@ This is the primary script for controlling the $SCRIPT node.
         started, you will get the message "Node is already running!" If the
         node is not already running, no output will be given.
 
+    foreground
+        Starts the $SCRIPT node in the foreground but without shell access.
+        Useful for systemd, runit and other boot services.
+
     stop
         Stops the running $SCRIPT node. Prints "ok" when successful.  When
         the node is already stopped or not responding, prints:
@@ -67,6 +75,11 @@ This is the primary script for controlling the $SCRIPT node.
         '$SCRIPT attach' instead" when the node is running in the background.
 
  DIAGNOSTIC COMMANDS
+    status
+        Checks that the $SCRIPT node is running.
+        When the node is stopped or not responding, prints:
+        "Node is not running!"
+
     ping
         Checks that the $SCRIPT node is running. Prints "pong" when
         successful.  When the node is stopped or not responding, prints:
@@ -148,6 +161,16 @@ EOF
 
 }
 
+
+relx_get_code_paths() {
+    code="{ok, [{release,_,_,Apps}]} = file:consult(\"$REL_DIR/$REL_NAME.rel\"),"\
+"lists:foreach(fun(A) ->"\
+"   io:fwrite(\"$RUNNER_BASE_DIR/lib/~p-~s/ebin \", [element(1, A), element(2, A)]) "\
+"end, Apps),"\
+"halt()."
+
+    "$ERTS_PATH/erl" -noshell -boot start_clean -eval "$code"
+}
 
 # Call bootstrapd for daemon commands like start/stop/console
 bootstrapd() {
@@ -279,6 +302,16 @@ case "$1" in
         fi
         ;;
 
+    status)
+        # Bootstrap daemon command (check perms & drop to $RUNNER_USER)
+        bootstrapd $@
+        ## See if the VM is alive
+        if ! ping_node > /dev/null 2>&1 ; then
+            echo "Node is not running!"
+            exit 1
+        fi
+        ;;
+
     attach-direct)
         # Bootstrap daemon command (check perms & drop to $RUNNER_USER)
         bootstrapd $@
@@ -310,7 +343,27 @@ case "$1" in
         exec $ERTS_PATH/erl -name c_$$_$NODE_NAME -hidden -remsh $NODE_NAME -boot start_clean $COOKIE_ARG $NET_TICKTIME_ARG
         ;;
 
-    console)
+    console|console_clean|console_boot|foreground)
+        __code_paths=""
+        FOREGROUNDOPTIONS=""
+        case "$1" in
+            console)
+                BOOTFILE="$REL_DIR/$RUNNER_SCRIPT"
+                ;;
+            foreground)
+                BOOTFILE="$REL_DIR/$RUNNER_SCRIPT"
+                FOREGROUNDOPTIONS="-noshell -noinput +Bd"
+                ;;
+            console_clean)
+                __code_paths=$(relx_get_code_paths)
+                BOOTFILE="$RUNNER_BASE_DIR/bin/start_clean"
+                ;;
+            console_boot)
+                shift
+                BOOTFILE="$1"
+                shift
+                ;;
+        esac
         # Bootstrap daemon command (check perms & drop to $RUNNER_USER)
         bootstrapd $@
 
@@ -335,12 +388,12 @@ case "$1" in
 
         # Setup beam-required vars
         ROOTDIR=$RUNNER_BASE_DIR
-        BINDIR=$RUNNER_BASE_DIR/erts-$ERTS_VSN/bin
+        BINDIR=$ERTS_PATH
         EMU=beam
         PROGNAME=`echo $0 | sed 's/.*\///'`
-        CMD="$NUMACTL $BINDIR/erlexec -boot $RUNNER_BASE_DIR/releases/$APP_VSN/$RUNNER_SCRIPT \
+        CMD="$NUMACTL $BINDIR/erlexec $FOREGROUNDOPTIONS -boot $BOOTFILE \
              $CONFIG_ARGS \
-            -pa $RUNNER_PATCH_DIR -- ${1+"$@"}"
+            -pa $RUNNER_PATCH_DIR $__code_paths -- ${1+"$@"}"
         export EMU
         export ROOTDIR
         export BINDIR
