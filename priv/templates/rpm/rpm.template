@@ -20,3 +20,4 @@
 {template, "specfile", "specfile"}.
 {template, "rhel.init.script", "rhel.init.script"}.
 {template, "suse.init.script", "suse.init.script"}.
+{template, "package.service", "package.service"}.

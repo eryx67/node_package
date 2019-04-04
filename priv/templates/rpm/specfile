@@ -28,6 +28,7 @@ URL: {{vendor_url}}
 Vendor: {{vendor_name}}
 Packager: {{vendor_contact_name}} <{{vendor_contact_email}}>
 BuildRoot: %{_tmppath}/%{name}-%{_revision}-%{release}-root
+BuildRequires: systemd
 Summary: {{package_shortdesc}}
 Obsoletes: {{package_name}}
 
@@ -37,6 +38,7 @@ Requires: {{rpm_depends}}
 {{package_desc}}
 
 %define init_script %{_sysconfdir}/init.d/{{package_install_name}}
+%define systemd_unit %{_unitdir}/{{package_install_name}}.service
 %define debug_package %{nil}
 %define __prelink_undo_cmd /bin/cat prelink library
 
@@ -133,6 +135,8 @@ cp -R %{relpath}/data/* \
 
 mkdir -p %{buildroot}%{_sysconfdir}/init.d
 install -m755 %{_topdir}/init.script  %{buildroot}%{_sysconfdir}/init.d/{{package_install_name}}
+mkdir -p %{buildroot}%/%{_unitdir}
+install -m644 %{_topdir}/package.service %{buildroot}%/%{systemd_unit}
 
 # Needed to work around check-rpaths which seems to be hardcoded into recent
 # RPM releases
@@ -192,6 +196,7 @@ exit 0
 %{_localstatedir}/run/{{package_install_name}}
 %defattr(-,root,root)
 %{_sysconfdir}/init.d/{{package_install_name}}
+%{systemd_unit}
 %{_{{bin_or_sbin}}dir}/*
 %{_libdir}/*
 %dir %{_sysconfdir}/{{package_install_name}}
